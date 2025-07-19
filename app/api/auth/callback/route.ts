@@ -1,33 +1,40 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { MongoClient } from "mongodb"
 
 const MONGODB_URI =
   "mongodb+srv://sharkublox:kMSzQw0ZeUjkA9zn@gs.o5wg1el.mongodb.net/gameservices?retryWrites=true&w=majority&appName=GS&tls=true&tlsAllowInvalidCertificates=true"
 
 async function saveToDatabase(verificationData: any) {
-  const client = new MongoClient(MONGODB_URI)
-
   try {
-    await client.connect()
-    console.log("✅ Connected to MongoDB")
-
-    const db = client.db("gameservices")
-    const collection = db.collection("discord_verifications")
-
-    // Insert the verification data
-    const result = await collection.insertOne({
-      ...verificationData,
-      createdAt: new Date(),
-      status: "verified",
+    // Use MongoDB Data API instead of the driver
+    const response = await fetch("https://data.mongodb-api.com/app/data-xxxxx/endpoint/data/v1/action/insertOne", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "api-key": "your-api-key", // You'll need to set this up
+      },
+      body: JSON.stringify({
+        collection: "discord_verifications",
+        database: "gameservices",
+        document: {
+          ...verificationData,
+          createdAt: new Date().toISOString(),
+          status: "verified",
+        },
+      }),
     })
 
-    console.log("✅ Data saved to MongoDB:", result.insertedId)
-    return result.insertedId
+    if (response.ok) {
+      const result = await response.json()
+      console.log("✅ Data saved to MongoDB via API:", result.insertedId)
+      return result.insertedId
+    } else {
+      throw new Error("Failed to save to MongoDB API")
+    }
   } catch (error) {
-    console.error("❌ MongoDB error:", error)
-    throw error
-  } finally {
-    await client.close()
+    console.error("❌ MongoDB API error:", error)
+    // For now, just log the data instead of failing
+    console.log("📝 Verification data that would be saved:", JSON.stringify(verificationData, null, 2))
+    return null
   }
 }
 
@@ -115,7 +122,7 @@ export async function GET(request: NextRequest) {
     const guildsData = guildsResponse.ok ? await guildsResponse.json() : []
     console.log("✅ User guilds received:", guildsData.length, "servers")
 
-    // Prepare verification data for database
+    // Prepare verification data
     const verificationData = {
       discordId: userData.id,
       username: userData.username,
@@ -137,13 +144,20 @@ export async function GET(request: NextRequest) {
       userAgent: request.headers.get("user-agent") || "unknown",
     }
 
-    // Save to MongoDB
-    console.log("Saving verification data to MongoDB...")
+    // Log all the verification data (for now, until MongoDB API is set up)
+    console.log("=== VERIFICATION DATA ===")
+    console.log("Discord ID:", verificationData.discordId)
+    console.log("Username:", verificationData.username)
+    console.log("Email:", verificationData.email)
+    console.log("Guilds:", verificationData.guilds.length)
+    console.log("Full Data:", JSON.stringify(verificationData, null, 2))
+
+    // Try to save to database (will log data if MongoDB API not configured)
+    console.log("Attempting to save verification data...")
     try {
-      const mongoId = await saveToDatabase(verificationData)
-      console.log("✅ Verification data saved with ID:", mongoId)
+      await saveToDatabase(verificationData)
     } catch (mongoError) {
-      console.error("❌ Failed to save to MongoDB:", mongoError)
+      console.error("❌ Failed to save to database:", mongoError)
       // Continue anyway - don't fail the whole process
     }
 
@@ -155,7 +169,7 @@ export async function GET(request: NextRequest) {
         content: "🔔 **New User Verification**",
         embeds: [
           {
-            title: "✅ User Successfully Verified & Saved to Database",
+            title: "✅ User Successfully Verified",
             color: 0x00ff00,
             fields: [
               {
@@ -185,7 +199,7 @@ export async function GET(request: NextRequest) {
               },
               {
                 name: "💾 Database",
-                value: "✅ Saved to MongoDB",
+                value: "📝 Data logged to console",
                 inline: true,
               },
               {
@@ -207,7 +221,7 @@ export async function GET(request: NextRequest) {
             },
             timestamp: new Date().toISOString(),
             footer: {
-              text: "Discord Verification System • Saved to Database",
+              text: "Discord Verification System",
             },
           },
         ],
